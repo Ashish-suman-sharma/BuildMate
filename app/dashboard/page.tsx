@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 interface Project {
@@ -27,6 +27,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; title: string; step: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,6 +102,39 @@ export default function DashboardPage() {
     if (filter === 'completed') return p.progress.progressPercent === 100;
     return true;
   });
+
+  const handleDeleteClick = (projectId: string, projectTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent navigation to project
+    setDeleteConfirmation({ id: projectId, title: projectTitle, step: 1 });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmation) return;
+
+    if (deleteConfirmation.step === 1) {
+      // First confirmation - move to step 2
+      setDeleteConfirmation({ ...deleteConfirmation, step: 2 });
+    } else {
+      // Second confirmation - actually delete
+      setDeleting(true);
+      try {
+        await deleteDoc(doc(db, 'projects', deleteConfirmation.id));
+        // Remove from local state
+        setProjects(projects.filter(p => p.id !== deleteConfirmation.id));
+        console.log('✅ Project deleted successfully');
+        setDeleteConfirmation(null);
+      } catch (error) {
+        console.error('❌ Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+      } finally {
+        setDeleting(false);
+      }
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmation(null);
+  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -176,6 +211,19 @@ export default function DashboardPage() {
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
+                      router.push('/profile');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span>My Profile</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
                       router.push('/dashboard');
                     }}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
@@ -184,19 +232,6 @@ export default function DashboardPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                     </svg>
                     <span>My Projects</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      router.push('/onboarding');
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span>Update Profile</span>
                   </button>
 
                   <div className="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
@@ -344,14 +379,26 @@ export default function DashboardPage() {
                     <span className="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide bg-white/30 backdrop-blur-sm text-white shadow-lg">
                       {project.difficulty}
                     </span>
-                    {project.progress.progressPercent === 100 && (
-                      <div className="bg-white/30 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center space-x-1">
-                        <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    <div className="flex items-center space-x-2">
+                      {project.progress.progressPercent === 100 && (
+                        <div className="bg-white/30 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center space-x-1">
+                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-xs font-bold text-white">Done</span>
+                        </div>
+                      )}
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => handleDeleteClick(project.id, project.title, e)}
+                        className="p-2 bg-white/20 hover:bg-red-500/80 backdrop-blur-sm rounded-full transition-all duration-300 transform hover:scale-110 group/delete"
+                        title="Delete project"
+                      >
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
-                        <span className="text-xs font-bold text-white">Done</span>
-                      </div>
-                    )}
+                      </button>
+                    </div>
                   </div>
                   <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
                   <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
@@ -419,6 +466,91 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 transform animate-in zoom-in-95 duration-300">
+            {/* Warning Icon */}
+            <div className="flex justify-center mb-6">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                deleteConfirmation.step === 1 
+                  ? 'bg-yellow-100 dark:bg-yellow-900/30' 
+                  : 'bg-red-100 dark:bg-red-900/30'
+              }`}>
+                <svg 
+                  className={`w-8 h-8 ${
+                    deleteConfirmation.step === 1 
+                      ? 'text-yellow-600 dark:text-yellow-400' 
+                      : 'text-red-600 dark:text-red-400'
+                  }`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Title and Message */}
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+                {deleteConfirmation.step === 1 ? 'Delete Project?' : 'Are You Absolutely Sure?'}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-2">
+                {deleteConfirmation.step === 1 
+                  ? 'You are about to delete:'
+                  : 'This action cannot be undone. You will permanently lose:'
+                }
+              </p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-4 py-3 rounded-lg mb-4">
+                "{deleteConfirmation.title}"
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {deleteConfirmation.step === 1 
+                  ? 'All progress, tasks, and data will be permanently deleted.'
+                  : '⚠️ This will delete all milestones, tasks, and your entire progress!'
+                }
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteCancel}
+                disabled={deleting}
+                className="flex-1 px-6 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className={`flex-1 px-6 py-3 font-semibold rounded-xl transition-all shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center space-x-2 ${
+                  deleteConfirmation.step === 1
+                    ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                    : 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white'
+                }`}
+              >
+                {deleting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span>{deleteConfirmation.step === 1 ? 'Yes, Delete' : 'Permanently Delete'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

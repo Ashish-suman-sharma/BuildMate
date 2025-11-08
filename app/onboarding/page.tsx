@@ -5,20 +5,29 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { updateProfile } from 'firebase/auth';
 
 export default function OnboardingPage() {
-  const [skillText, setSkillText] = useState('');
-  const [loading, setLoading] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
+  
+  // Pre-fill name from Google account if available
+  const [name, setName] = useState(user?.displayName || '');
+  const [bio, setBio] = useState('');
+  const [skillText, setSkillText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !skillText.trim()) return;
 
     setLoading(true);
+    setError('');
 
     try {
+      console.log('📝 Submitting onboarding for user:', user.uid);
+      
       // Call API to parse skills using Gemini AI
       const response = await fetch('/api/parse-profile', {
         method: 'POST',
@@ -26,10 +35,25 @@ export default function OnboardingPage() {
         body: JSON.stringify({ text: skillText, uid: user.uid }),
       });
 
+      if (!response.ok) {
+        throw new Error('Failed to parse profile');
+      }
+
       const data = await response.json();
+      console.log('✅ Profile parsed:', data);
+
+      const finalName = name.trim() || user.displayName || user.email?.split('@')[0] || 'User';
+
+      // Update Firebase Auth profile
+      if (finalName !== user.displayName) {
+        await updateProfile(user, { displayName: finalName });
+      }
 
       // Update user profile in Firestore
-      await updateDoc(doc(db, 'users', user.uid), {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        name: finalName,
+        bio: bio.trim(),
         skills: data.skills || [],
         preferredTech: data.preferredTech || [],
         experience: data.experience || 'beginner',
@@ -37,10 +61,13 @@ export default function OnboardingPage() {
         completedOnboarding: true,
       });
 
-      router.push('/home');
-    } catch (error) {
-      console.error('Error saving profile:', error);
-      alert('Failed to save profile. Please try again.');
+      console.log('✅ Profile updated, navigating to home...');
+      
+      // Use replace instead of push to prevent back navigation
+      router.replace('/home');
+    } catch (error: any) {
+      console.error('❌ Error saving profile:', error);
+      setError(error.message || 'Failed to save profile. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -49,13 +76,39 @@ export default function OnboardingPage() {
   const handleSkip = async () => {
     if (!user) return;
     
+    setLoading(true);
+    setError('');
+    
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      console.log('⏭️ Skipping onboarding for user:', user.uid);
+      
+      const finalName = name.trim() || user.displayName || user.email?.split('@')[0] || 'User';
+
+      // Update Firebase Auth profile
+      if (finalName !== user.displayName) {
+        await updateProfile(user, { displayName: finalName });
+      }
+
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        name: finalName,
+        bio: bio.trim(),
         completedOnboarding: true,
+        skills: [],
+        preferredTech: [],
+        experience: 'beginner',
+        timeBudget: 'flexible',
       });
-      router.push('/home');
-    } catch (error) {
-      console.error('Error skipping onboarding:', error);
+      
+      console.log('✅ Onboarding skipped, navigating to home...');
+      
+      // Use replace instead of push to prevent back navigation
+      router.replace('/home');
+    } catch (error: any) {
+      console.error('❌ Error skipping onboarding:', error);
+      setError(error.message || 'Failed to skip. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -72,13 +125,49 @@ export default function OnboardingPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Name Field */}
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Your Name
+            </label>
+            <input
+              id="name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              placeholder="Enter your name"
+            />
+            {user?.displayName && (
+              <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                ✓ Pre-filled from your Google account
+              </p>
+            )}
+          </div>
+
+          {/* Bio Field */}
+          <div>
+            <label htmlFor="bio" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Short Bio (Optional)
+            </label>
+            <textarea
+              id="bio"
+              rows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+              placeholder="Tell us a bit about yourself..."
+            />
+          </div>
+
+          {/* Skills Field */}
           <div>
             <label htmlFor="skills" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Describe your skills, experience, and project goals
             </label>
             <textarea
               id="skills"
-              rows={8}
+              rows={6}
               value={skillText}
               onChange={(e) => setSkillText(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
@@ -89,6 +178,12 @@ export default function OnboardingPage() {
               💡 Include: your experience level, technologies you know, time available, and what you want to learn
             </p>
           </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
+              {error}
+            </div>
+          )}
 
           <div className="flex gap-4">
             <button
@@ -101,9 +196,10 @@ export default function OnboardingPage() {
             <button
               type="button"
               onClick={handleSkip}
-              className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
+              disabled={loading}
+              className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Skip for now
+              {loading ? 'Saving...' : 'Skip for now'}
             </button>
           </div>
         </form>

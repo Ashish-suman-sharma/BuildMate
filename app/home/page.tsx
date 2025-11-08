@@ -220,6 +220,19 @@ export default function HomePage() {
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
+                      router.push('/profile');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span>My Profile</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
                       router.push('/dashboard');
                     }}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
@@ -228,19 +241,6 @@ export default function HomePage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                     </svg>
                     <span>My Projects</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      router.push('/onboarding');
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span>Update Profile</span>
                   </button>
 
                   <div className="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
@@ -317,18 +317,35 @@ export default function HomePage() {
             </div>
           </form>
           
-          {/* Quick suggestions */}
-          <div className="flex flex-wrap justify-center gap-2 mt-6">
-            <span className="text-sm text-gray-500 dark:text-gray-400">Try:</span>
-            {['React hooks', 'Node.js API', 'Todo app', 'Weather dashboard'].map((suggestion) => (
-              <button
-                key={suggestion}
-                onClick={() => setInput(suggestion)}
-                className="px-4 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 rounded-full transition-colors"
-              >
-                {suggestion}
-              </button>
-            ))}
+          {/* Enhanced Quick suggestions */}
+          <div className="mt-8">
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent"></div>
+              <span className="text-sm font-semibold text-gray-600 dark:text-gray-400 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full">
+                💡 Quick Start
+              </span>
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent"></div>
+            </div>
+            <div className="flex flex-wrap justify-center gap-3">
+              {[
+                { text: 'React hooks', icon: '⚛️', color: 'from-blue-500 to-cyan-500' },
+                { text: 'Node.js API', icon: '🟢', color: 'from-green-500 to-emerald-500' },
+                { text: 'Todo app', icon: '✅', color: 'from-purple-500 to-pink-500' },
+                { text: 'Weather dashboard', icon: '🌤️', color: 'from-orange-500 to-amber-500' }
+              ].map((suggestion) => (
+                <button
+                  key={suggestion.text}
+                  onClick={() => setInput(suggestion.text)}
+                  className="group relative px-5 py-2.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750 border-2 border-gray-200 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-500 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg group-hover:scale-110 transition-transform duration-300">{suggestion.icon}</span>
+                    <span>{suggestion.text}</span>
+                  </div>
+                  <div className={`absolute inset-0 rounded-xl bg-gradient-to-r ${suggestion.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}></div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
