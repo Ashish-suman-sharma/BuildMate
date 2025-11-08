@@ -15,6 +15,7 @@ interface Project {
   description: string;
   difficulty: string;
   status: string;
+  category?: string;
   progress: {
     completedTasks: number;
     totalTasks: number;
@@ -31,10 +32,14 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'recent' | 'progress' | 'title'>('recent');
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; title: string; step: number } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (authLoading) return; // Wait for auth to load
@@ -101,12 +106,33 @@ export default function DashboardPage() {
     }
   };
 
-  const filteredProjects = projects.filter(p => {
-    if (filter === 'all') return true;
-    if (filter === 'active') return p.status === 'active' && p.progress.progressPercent < 100;
-    if (filter === 'completed') return p.progress.progressPercent === 100;
-    return true;
-  });
+  // Get unique categories from projects
+  const categories = ['all', ...Array.from(new Set(projects.map(p => p.category).filter(Boolean)))];
+
+  // Filter and sort projects
+  const filteredProjects = projects
+    .filter(p => {
+      // Status filter
+      if (filter === 'active' && (p.status !== 'active' || p.progress.progressPercent >= 100)) return false;
+      if (filter === 'completed' && p.progress.progressPercent !== 100) return false;
+      
+      // Category filter
+      if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
+      
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'recent') {
+        const aTime = a.createdAt?.toDate?.() || new Date(0);
+        const bTime = b.createdAt?.toDate?.() || new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      } else if (sortBy === 'progress') {
+        return b.progress.progressPercent - a.progress.progressPercent;
+      } else if (sortBy === 'title') {
+        return a.title.localeCompare(b.title);
+      }
+      return 0;
+    });
 
   const handleDeleteClick = (projectId: string, projectTitle: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent navigation to project
@@ -142,11 +168,14 @@ export default function DashboardPage() {
     setDeleteConfirmation(null);
   };
 
-  // Close menu when clicking outside
+  // Close menus when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
+      }
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
+        setShowFilterMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -156,6 +185,29 @@ export default function DashboardPage() {
   // Get user display name and avatar
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
   const userAvatar = user?.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6366f1&color=fff&bold=true`;
+
+  // Helper function to get category icon
+  const getCategoryIcon = (category: string | undefined) => {
+    if (!category) return '📁';
+    const icons: { [key: string]: string } = {
+      'dsa': '🧮',
+      'web development': '🌐',
+      'mobile development': '📱',
+      'ai/ml': '🤖',
+      'devops': '⚙️',
+      'database': '🗄️',
+      'game development': '🎮',
+      'backend': '🔧',
+      'frontend': '🎨',
+      'fullstack': '💻',
+      'data science': '📊',
+      'cybersecurity': '🔒',
+      'blockchain': '⛓️',
+      'cloud': '☁️',
+      'general': '📁',
+    };
+    return icons[category.toLowerCase()] || '📁';
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -310,59 +362,156 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Enhanced Filter Tabs */}
-        <div className="flex flex-wrap gap-3 mb-10">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 ${
-              filter === 'all'
-                ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border-2 border-gray-200 dark:border-gray-700'
-            }`}
-          >
-            <span className="flex items-center space-x-2">
-              <span>All</span>
-              <span className={`px-2 py-0.5 rounded-full text-xs ${
-                filter === 'all' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'
-              }`}>
-                {projects.length}
+        {/* Enhanced Filter Tabs with Filter/Sort Button */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-10">
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 ${
+                filter === 'all'
+                  ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border-2 border-gray-200 dark:border-gray-700'
+              }`}
+            >
+              <span className="flex items-center space-x-2">
+                <span>All</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                  filter === 'all' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'
+                }`}>
+                  {projects.length}
+                </span>
               </span>
-            </span>
-          </button>
-          <button
-            onClick={() => setFilter('active')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 ${
-              filter === 'active'
-                ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border-2 border-gray-200 dark:border-gray-700'
-            }`}
-          >
-            <span className="flex items-center space-x-2">
-              <span>Active</span>
-              <span className={`px-2 py-0.5 rounded-full text-xs ${
-                filter === 'active' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'
-              }`}>
-                {projects.filter(p => p.status === 'active' && p.progress.progressPercent < 100).length}
+            </button>
+            <button
+              onClick={() => setFilter('active')}
+              className={`px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 ${
+                filter === 'active'
+                  ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border-2 border-gray-200 dark:border-gray-700'
+              }`}
+            >
+              <span className="flex items-center space-x-2">
+                <span>Active</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                  filter === 'active' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'
+                }`}>
+                  {projects.filter(p => p.status === 'active' && p.progress.progressPercent < 100).length}
+                </span>
               </span>
-            </span>
-          </button>
-          <button
-            onClick={() => setFilter('completed')}
-            className={`px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 ${
-              filter === 'completed'
-                ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg'
-                : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border-2 border-gray-200 dark:border-gray-700'
-            }`}
-          >
-            <span className="flex items-center space-x-2">
-              <span>Completed</span>
-              <span className={`px-2 py-0.5 rounded-full text-xs ${
-                filter === 'completed' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'
-              }`}>
-                {projects.filter(p => p.progress.progressPercent === 100).length}
+            </button>
+            <button
+              onClick={() => setFilter('completed')}
+              className={`px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 ${
+                filter === 'completed'
+                  ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border-2 border-gray-200 dark:border-gray-700'
+              }`}
+            >
+              <span className="flex items-center space-x-2">
+                <span>Completed</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs ${
+                  filter === 'completed' ? 'bg-white/20' : 'bg-gray-200 dark:bg-gray-700'
+                }`}>
+                  {projects.filter(p => p.progress.progressPercent === 100).length}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </div>
+
+          {/* Filter & Sort Button */}
+          <div className="relative" ref={filterMenuRef}>
+            <button
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className="px-6 py-3 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-all transform hover:scale-105 flex items-center space-x-2 shadow-md"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+              </svg>
+              <span>Filter & Sort</span>
+              {(categoryFilter !== 'all' || sortBy !== 'recent') && (
+                <span className="w-2 h-2 bg-primary-600 rounded-full"></span>
+              )}
+            </button>
+
+            {/* Dropdown Menu */}
+            {showFilterMenu && (
+              <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                {/* Sort Section */}
+                <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Sort By</h4>
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => setSortBy('recent')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                        sortBy === 'recent'
+                          ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      📅 Most Recent
+                    </button>
+                    <button
+                      onClick={() => setSortBy('progress')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                        sortBy === 'progress'
+                          ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      📊 Progress %
+                    </button>
+                    <button
+                      onClick={() => setSortBy('title')}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                        sortBy === 'title'
+                          ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      🔤 Alphabetical
+                    </button>
+                  </div>
+                </div>
+
+                {/* Category Filter Section */}
+                {categories.length > 1 && (
+                  <div className="px-4 py-2">
+                    <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Category</h4>
+                    <div className="space-y-1">
+                      {categories.map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setCategoryFilter(cat || 'all')}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors capitalize ${
+                            categoryFilter === cat
+                              ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold'
+                              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {cat === 'all' ? '🗂️ All Categories' : `${getCategoryIcon(cat)} ${cat}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Reset Button */}
+                {(categoryFilter !== 'all' || sortBy !== 'recent') && (
+                  <div className="px-4 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                    <button
+                      onClick={() => {
+                        setCategoryFilter('all');
+                        setSortBy('recent');
+                      }}
+                      className="w-full px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors font-medium"
+                    >
+                      🔄 Reset Filters
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Projects Grid */}
@@ -429,6 +578,16 @@ export default function DashboardPage() {
 
                 {/* Project Content */}
                 <div className="p-6">
+                  {/* Category Tag */}
+                  {project.category && (
+                    <div className="mb-3">
+                      <span className="inline-flex items-center space-x-1.5 px-3 py-1 bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-800/30 text-purple-700 dark:text-purple-300 rounded-full text-xs font-semibold border border-purple-200 dark:border-purple-700">
+                        <span>{getCategoryIcon(project.category)}</span>
+                        <span className="capitalize">{project.category}</span>
+                      </span>
+                    </div>
+                  )}
+                  
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-2">
                     {project.title}
                   </h3>

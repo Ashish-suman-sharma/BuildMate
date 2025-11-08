@@ -24,8 +24,10 @@ export default function HomePage() {
   const { theme, toggleTheme } = useTheme();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [creatingRoadmap, setCreatingRoadmap] = useState(false);
   const [suggestedProjects, setSuggestedProjects] = useState<Project[]>([]);
   const [generatedProjects, setGeneratedProjects] = useState<Project[]>([]);
+  const [cachedSearchQuery, setCachedSearchQuery] = useState('');
   const [userProjects, setUserProjects] = useState<any[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -50,6 +52,24 @@ export default function HomePage() {
     // Load suggested projects and user's existing projects
     loadSuggestedProjects();
     loadUserProjects();
+    
+    // Restore cached search results from localStorage
+    const cached = localStorage.getItem('cachedSearchResults');
+    if (cached) {
+      try {
+        const { query, projects, timestamp } = JSON.parse(cached);
+        // Cache expires after 1 hour
+        if (Date.now() - timestamp < 3600000) {
+          setGeneratedProjects(projects);
+          setCachedSearchQuery(query);
+          setInput(query);
+        } else {
+          localStorage.removeItem('cachedSearchResults');
+        }
+      } catch (e) {
+        console.error('Error restoring cache:', e);
+      }
+    }
   }, [user, userProfile, router, authLoading]);
 
   // Close menu when clicking outside
@@ -109,6 +129,7 @@ export default function HomePage() {
 
     setLoading(true);
     setGeneratedProjects([]);
+    setCachedSearchQuery(input.trim());
 
     try {
       // Determine if input is a skill or project idea
@@ -123,7 +144,15 @@ export default function HomePage() {
       });
 
       const data = await response.json();
-      setGeneratedProjects(data.projects || []);
+      const projects = data.projects || [];
+      setGeneratedProjects(projects);
+      
+      // Cache the results in localStorage
+      localStorage.setItem('cachedSearchResults', JSON.stringify({
+        query: input.trim(),
+        projects: projects,
+        timestamp: Date.now()
+      }));
     } catch (err) {
       console.error('Error generating projects:', err);
       error('Failed to generate projects. Please try again.');
@@ -132,10 +161,46 @@ export default function HomePage() {
     }
   };
 
+  const handleShuffleProjects = async () => {
+    if (!cachedSearchQuery || !user) return;
+
+    setLoading(true);
+    try {
+      // Generate new projects with the same query
+      const response = await fetch('/api/generate-projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          input: cachedSearchQuery,
+          uid: user.uid,
+          profile: userProfile
+        }),
+      });
+
+      const data = await response.json();
+      const projects = data.projects || [];
+      setGeneratedProjects(projects);
+      
+      // Update cache with new results
+      localStorage.setItem('cachedSearchResults', JSON.stringify({
+        query: cachedSearchQuery,
+        projects: projects,
+        timestamp: Date.now()
+      }));
+      
+      success('✨ Generated new project ideas!');
+    } catch (err) {
+      console.error('Error shuffling projects:', err);
+      error('Failed to generate new projects. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSelectProject = async (project: Project) => {
     if (!user) return;
     
-    setLoading(true);
+    setCreatingRoadmap(true);
     try {
       const response = await fetch('/api/create-project', {
         method: 'POST',
@@ -148,27 +213,118 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate project roadmap');
+        // Get detailed error message from API response
+        let errorMessage = `Failed to generate project roadmap (Status: ${response.status})`;
+        try {
+          const errorData = await response.json();
+          console.error('API Error Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            data: errorData
+          });
+          errorMessage = errorData.error || errorData.message || errorData.details || errorMessage;
+        } catch (parseError) {
+          console.error('Could not parse error response:', parseError);
+          // Try to get response text if JSON parsing fails
+          try {
+            const text = await response.text();
+            console.error('Raw error response:', text);
+            if (text) errorMessage = `${errorMessage}: ${text.substring(0, 200)}`;
+          } catch (textError) {
+            console.error('Could not read response text');
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+      
+      // Validate that we got the expected data
+      if (!data.projectData) {
+        throw new Error('Invalid response from server - missing project data');
+      }
       
       // Save project to Firestore on client side
       const projectRef = await addDoc(collection(db, 'projects'), data.projectData);
       
       success('🎉 Project created successfully!');
-      setTimeout(() => router.push(`/project/${projectRef.id}`), 500);
-    } catch (err) {
+      setTimeout(() => router.push(`/project/${projectRef.id}`), 1000);
+    } catch (err: any) {
       console.error('Error creating project:', err);
-      error('Failed to create project. Please try again.');
-    } finally {
-      setLoading(false);
+      const errorMsg = err.message || 'Failed to create project. Please try again.';
+      error(errorMsg);
+      setCreatingRoadmap(false);
     }
+    // Don't set loading to false here - let the navigation handle it
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+      
+      {/* Animated Loading Screen Overlay for Roadmap Creation */}
+      {creatingRoadmap && (
+        <div className="fixed inset-0 bg-gradient-to-br from-primary-600/95 via-primary-700/95 to-primary-800/95 dark:from-gray-900/98 dark:via-gray-800/98 dark:to-gray-900/98 backdrop-blur-sm z-[9999] flex items-center justify-center animate-in fade-in duration-300">
+          <div className="text-center space-y-8 px-4">
+            {/* Animated Robot/Building Icon */}
+            <div className="relative inline-block">
+              <div className="w-32 h-32 bg-white/10 rounded-3xl flex items-center justify-center backdrop-blur-sm border-2 border-white/20 animate-pulse">
+                <svg className="w-20 h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              
+              {/* Spinning circles around the icon */}
+              <div className="absolute inset-0 animate-spin" style={{ animationDuration: '3s' }}>
+                <div className="absolute top-0 left-1/2 w-3 h-3 bg-white rounded-full -translate-x-1/2"></div>
+              </div>
+              <div className="absolute inset-0 animate-spin" style={{ animationDuration: '2s', animationDirection: 'reverse' }}>
+                <div className="absolute bottom-0 left-1/2 w-3 h-3 bg-white/70 rounded-full -translate-x-1/2"></div>
+              </div>
+            </div>
+
+            {/* Loading Text */}
+            <div className="space-y-3">
+              <h2 className="text-3xl font-bold text-white animate-pulse">
+                Creating Your Project Roadmap
+              </h2>
+              <p className="text-white/80 text-lg max-w-md mx-auto">
+                Our AI is crafting a personalized learning path just for you...
+              </p>
+            </div>
+
+            {/* Progress Steps */}
+            <div className="space-y-3 max-w-sm mx-auto">
+              <div className="flex items-center space-x-3 text-white/90 animate-in slide-in-from-left duration-500">
+                <svg className="w-5 h-5 flex-shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="text-sm">Analyzing project requirements...</span>
+              </div>
+              <div className="flex items-center space-x-3 text-white/90 animate-in slide-in-from-left duration-700">
+                <svg className="w-5 h-5 flex-shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ animationDelay: '0.2s' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="text-sm">Generating milestones and tasks...</span>
+              </div>
+              <div className="flex items-center space-x-3 text-white/90 animate-in slide-in-from-left duration-1000">
+                <svg className="w-5 h-5 flex-shrink-0 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ animationDelay: '0.4s' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="text-sm">Curating learning resources...</span>
+              </div>
+            </div>
+
+            {/* Helpful Tip */}
+            <div className="mt-8 p-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl max-w-md mx-auto">
+              <p className="text-white/90 text-sm">
+                💡 <span className="font-semibold">Tip:</span> Each project includes milestones, tasks, and curated resources to help you learn effectively!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Enhanced Header */}
       <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -400,7 +556,7 @@ export default function HomePage() {
             </div>
             <div className="grid md:grid-cols-3 gap-6">
               {suggestedProjects.map((project, index) => (
-                <ProjectCard key={index} project={project} onSelect={handleSelectProject} loading={loading} />
+                <ProjectCard key={index} project={project} onSelect={handleSelectProject} loading={creatingRoadmap} />
               ))}
             </div>
           </div>
@@ -409,25 +565,42 @@ export default function HomePage() {
         {/* Generated Projects */}
         {generatedProjects.length > 0 && (
           <div className="mb-16">
-            <div className="flex items-center justify-between mb-8">
-              <div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+              <div className="flex-1">
                 <h3 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
                   Your custom projects
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400">
-                  AI-generated specifically for "{input}"
+                  AI-generated specifically for "{cachedSearchQuery || input}"
                 </p>
               </div>
-              <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="text-sm font-medium">Fresh</span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleShuffleProjects}
+                  disabled={loading}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                >
+                  <svg 
+                    className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span className="text-sm font-semibold">Shuffle Ideas</span>
+                </button>
+                <div className="flex items-center space-x-2 text-green-600 dark:text-green-400 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-sm font-medium">Fresh</span>
+                </div>
               </div>
             </div>
             <div className="grid md:grid-cols-3 gap-6">
               {generatedProjects.map((project, index) => (
-                <ProjectCard key={index} project={project} onSelect={handleSelectProject} loading={loading} />
+                <ProjectCard key={index} project={project} onSelect={handleSelectProject} loading={creatingRoadmap} />
               ))}
             </div>
           </div>
