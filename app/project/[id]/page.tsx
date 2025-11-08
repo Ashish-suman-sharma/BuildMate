@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useParams } from 'next/navigation';
 import { doc, getDoc, updateDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { MarkdownMessage } from '@/components/MarkdownMessage';
 
 interface Task {
   id: string;
@@ -48,6 +49,7 @@ export default function ProjectPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showDescription, setShowDescription] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Get user display name and avatar
@@ -83,6 +85,29 @@ export default function ProjectPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Auto-close description panel on scroll
+  useEffect(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    
+    function handleScroll() {
+      if (showDescription) {
+        // Clear any existing timeout
+        clearTimeout(scrollTimeout);
+        
+        // Set a small delay to avoid closing immediately on tiny scrolls
+        scrollTimeout = setTimeout(() => {
+          setShowDescription(false);
+        }, 100);
+      }
+    }
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, [showDescription]);
 
   const toggleTaskDone = async (milestoneId: string, taskId: string) => {
     if (!project) return;
@@ -187,6 +212,23 @@ export default function ProjectPage() {
     };
     setChatMessages(prev => [...prev, newUserMsg]);
 
+    // Gather detailed context about the project state
+    const currentMilestone = getCurrentMilestone();
+    const completedTasks = project.roadmap.milestones.flatMap(m => 
+      m.tasks.filter(t => t.done).map(t => ({ milestone: m.title, task: t.title }))
+    );
+    const currentTasks = project.roadmap.milestones.flatMap(m => 
+      m.tasks.filter(t => !t.done && !t.locked).map(t => ({ 
+        milestone: m.title, 
+        task: t.title,
+        description: t.description,
+        skills: t.requiredSkills 
+      }))
+    );
+    const nextTasks = project.roadmap.milestones.flatMap(m => 
+      m.tasks.filter(t => t.locked).slice(0, 2).map(t => ({ milestone: m.title, task: t.title }))
+    );
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -194,28 +236,86 @@ export default function ProjectPage() {
         body: JSON.stringify({
           projectId,
           message: userMessage,
+          conversationHistory: chatMessages.map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'model',
+            text: msg.text,
+          })),
           context: {
             projectTitle: project.title,
-            currentMilestone: getCurrentMilestone(),
+            projectDescription: project.description,
+            difficulty: project.difficulty,
+            progress: {
+              completedTasks: project.progress.completedTasks,
+              totalTasks: project.progress.totalTasks,
+              progressPercent: project.progress.progressPercent,
+            },
+            currentMilestone: currentMilestone ? {
+              title: currentMilestone.title,
+              description: currentMilestone.description,
+              tasksCompleted: currentMilestone.tasks.filter(t => t.done).length,
+              tasksTotal: currentMilestone.tasks.length,
+            } : null,
+            recentCompletedTasks: completedTasks.slice(-5), // Last 5 completed
+            currentActiveTasks: currentTasks, // Tasks user can work on now
+            upcomingTasks: nextTasks, // Next tasks to unlock
+            allMilestones: project.roadmap.milestones.map(m => ({
+              title: m.title,
+              completed: m.tasks.every(t => t.done),
+              progress: `${m.tasks.filter(t => t.done).length}/${m.tasks.length}`,
+            })),
           },
         }),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        throw new Error(errorData.error || 'Failed to get AI response');
+      }
+
       const data = await response.json();
+      console.log('AI Response data:', data); // Debug log
+
+      // Validate AI response and provide fallback
+      const responseText = data.response || data.text || data.message;
+      if (!responseText || typeof responseText !== 'string') {
+        console.error('Invalid response format:', data);
+        throw new Error('Invalid AI response format');
+      }
 
       // Add AI response to chat
       const aiMsg = {
         sender: 'ai',
-        text: data.response,
+        text: responseText,
         timestamp: new Date(),
       };
       setChatMessages(prev => [...prev, aiMsg]);
 
-      // Save to Firestore
-      await addDoc(collection(db, 'projects', projectId, 'chat'), newUserMsg);
-      await addDoc(collection(db, 'projects', projectId, 'chat'), aiMsg);
+      // Save to Firestore - only save valid messages
+      try {
+        await addDoc(collection(db, 'projects', projectId, 'chat'), {
+          sender: newUserMsg.sender,
+          text: newUserMsg.text,
+          timestamp: newUserMsg.timestamp,
+        });
+        await addDoc(collection(db, 'projects', projectId, 'chat'), {
+          sender: aiMsg.sender,
+          text: aiMsg.text,
+          timestamp: aiMsg.timestamp,
+        });
+      } catch (firestoreError) {
+        console.error('Error saving to Firestore:', firestoreError);
+        // Don't throw - message is already in UI
+      }
     } catch (error) {
       console.error('Error sending chat message:', error);
+      // Add error message to chat
+      const errorMsg = {
+        sender: 'ai',
+        text: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date(),
+      };
+      setChatMessages(prev => [...prev, errorMsg]);
     } finally {
       setChatLoading(false);
     }
@@ -352,43 +452,58 @@ export default function ProjectPage() {
           </div>
         </div>
 
-        {/* Project Header Section */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium mb-4 flex items-center space-x-2 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span>Back to Dashboard</span>
-          </button>
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{project.title}</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4 max-w-3xl">{project.description}</p>
-              <div className="flex gap-3">
-                <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide ${
-                  project.difficulty === 'beginner' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                  project.difficulty === 'intermediate' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
-                  {project.difficulty}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowChat(!showChat)}
-              className="px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white rounded-xl font-semibold transition-all shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center space-x-2"
-            >
-              <span>{showChat ? 'Hide AI Mentor' : 'AI Mentor'}</span>
-              <span>💬</span>
-            </button>
-          </div>
-        </div>
       </header>
 
+      {/* Collapsible Project Info Panel - Below Navbar */}
+      <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-md border-b border-gray-200 dark:border-gray-700 sticky top-[88px] z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <button
+            onClick={() => setShowDescription(!showDescription)}
+            className="w-full py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors rounded-lg px-2"
+          >
+            <div className="flex items-center space-x-3">
+              <svg 
+                className={`w-5 h-5 text-primary-600 dark:text-primary-400 transition-transform duration-300 ${showDescription ? 'rotate-90' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                {showDescription ? 'Hide Project Details' : 'Show Project Details'}
+              </span>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+              project.difficulty === 'beginner' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+              project.difficulty === 'intermediate' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+            }`}>
+              {project.difficulty}
+            </span>
+          </button>
+          
+          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showDescription ? 'max-h-[400px] opacity-100 pb-4' : 'max-h-0 opacity-0'}`}>
+            <div className="bg-gradient-to-br from-primary-50 to-white dark:from-gray-700 dark:to-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-600">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">{project.title}</h2>
+              <p className="text-gray-600 dark:text-gray-400 leading-relaxed">{project.description}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Back to Dashboard Button */}
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium mb-6 flex items-center space-x-2 transition-colors group"
+        >
+          <svg className="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          <span>Back to Dashboard</span>
+        </button>
+
         {/* Enhanced Progress Bar */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 mb-8 border border-gray-200 dark:border-gray-700">
           <div className="flex justify-between items-center mb-4">
@@ -563,62 +678,100 @@ export default function ProjectPage() {
         </div>
       </main>
 
-      {/* AI Chat Modal */}
+      {/* Floating Chat Toggle Button */}
+      {!showChat && (
+        <button
+          onClick={() => setShowChat(true)}
+          className="fixed bottom-6 right-6 w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:scale-110 flex items-center justify-center z-50 group"
+          title="Open AI Mentor Chat"
+        >
+          <svg className="w-8 h-8 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+        </button>
+      )}
+
+      {/* AI Chat Window */}
       {showChat && (
-        <div className="fixed bottom-4 right-4 w-96 h-[600px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col">
+        <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col z-50 animate-in slide-in-from-bottom-5 duration-300">
           <div className="bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-3 rounded-t-2xl flex justify-between items-center">
-            <h3 className="text-white font-semibold">AI Mentor</h3>
-            <button onClick={() => setShowChat(false)} className="text-white hover:text-gray-200">
-              ✕
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <h3 className="text-white font-semibold">AI Mentor</h3>
+            </div>
+            <button 
+              onClick={() => setShowChat(false)} 
+              className="text-white hover:text-gray-200 hover:bg-white/20 rounded-lg p-1 transition-all"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-900/50">
             {chatMessages.length === 0 && (
-              <div className="text-center text-gray-500 dark:text-gray-400 text-sm mt-8">
-                Ask me anything about your project! 💡
+              <div className="flex flex-col items-center justify-center h-full space-y-3">
+                <div className="w-16 h-16 bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900/30 dark:to-primary-800/30 rounded-full flex items-center justify-center">
+                  <svg className="w-8 h-8 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-gray-700 dark:text-gray-300 font-medium">AI Mentor Ready!</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Ask me anything about your project 💡</p>
+                </div>
               </div>
             )}
             {chatMessages.map((msg, idx) => (
-              <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] px-4 py-2 rounded-lg ${
+              <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl shadow-sm ${
                   msg.sender === 'user'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    ? 'bg-gradient-to-br from-primary-600 to-primary-700 text-white rounded-br-md'
+                    : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600 rounded-bl-md'
                 }`}>
-                  {msg.text}
+                  {msg.sender === 'user' ? (
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                  ) : (
+                    <MarkdownMessage text={msg.text} className="text-sm" />
+                  )}
                 </div>
               </div>
             ))}
             {chatLoading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-lg">
-                  <div className="flex space-x-2">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="bg-white dark:bg-gray-700 px-4 py-2.5 rounded-2xl rounded-bl-md shadow-sm border border-gray-200 dark:border-gray-600">
+                  <div className="flex space-x-1.5">
+                    <div className="w-2 h-2 bg-primary-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                    <div className="w-2 h-2 bg-primary-600 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
                   </div>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
-                placeholder="Ask a question..."
-                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendChatMessage()}
+                  placeholder="Type your question..."
+                  className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all"
+                />
+              </div>
               <button
                 onClick={sendChatMessage}
                 disabled={chatLoading || !chatInput.trim()}
-                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-5 py-3 bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white rounded-xl font-medium transition-all shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center space-x-2"
               >
-                Send
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
               </button>
             </div>
           </div>
