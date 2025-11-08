@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, orderBy, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useToast } from '@/hooks/useToast';
+import { ToastContainer } from '@/components/Toast';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Project {
   id: string;
@@ -23,6 +26,8 @@ interface Project {
 export default function DashboardPage() {
   const { user, signOut, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { toasts, removeToast, success, error } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
@@ -122,10 +127,11 @@ export default function DashboardPage() {
         // Remove from local state
         setProjects(projects.filter(p => p.id !== deleteConfirmation.id));
         console.log('✅ Project deleted successfully');
+        success('🗑️ Project deleted successfully');
         setDeleteConfirmation(null);
-      } catch (error) {
-        console.error('❌ Error deleting project:', error);
-        alert('Failed to delete project. Please try again.');
+      } catch (err) {
+        console.error('❌ Error deleting project:', err);
+        error('Failed to delete project. Please try again.');
       } finally {
         setDeleting(false);
       }
@@ -153,20 +159,24 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       {/* Enhanced Header */}
       <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             {/* Logo and Navigation */}
             <div className="flex items-center space-x-8">
-              <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => router.push('/home')}
+                className="flex items-center space-x-3 hover:opacity-80 transition-opacity cursor-pointer"
+              >
                 <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
                   <span className="text-white font-bold text-xl">B</span>
                 </div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                   BuildMate
                 </h1>
-              </div>
+              </button>
               
               <nav className="hidden md:flex space-x-1">
                 <button 
@@ -184,12 +194,31 @@ export default function DashboardPage() {
               </nav>
             </div>
 
-            {/* User Profile */}
-            <div className="relative user-menu-container" ref={menuRef}>
+            {/* Theme Toggle & User Profile */}
+            <div className="flex items-center space-x-4">
+              {/* Theme Toggle Button */}
               <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
+                onClick={toggleTheme}
+                className="p-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
+                title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
               >
+                {theme === 'light' ? (
+                  <svg className="w-5 h-5 text-gray-700 group-hover:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5 text-gray-300 group-hover:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* User Profile */}
+              <div className="relative user-menu-container" ref={menuRef}>
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
+                >
                 <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400">
                   {displayName}
                 </span>
@@ -250,6 +279,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>
@@ -380,23 +410,16 @@ export default function DashboardPage() {
                       {project.difficulty}
                     </span>
                     <div className="flex items-center space-x-2">
-                      {project.progress.progressPercent === 100 && (
-                        <div className="bg-white/30 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center space-x-1">
-                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          <span className="text-xs font-bold text-white">Done</span>
-                        </div>
-                      )}
-                      {/* Delete Button */}
+                      {/* Delete Button - Subtle & Aesthetic */}
                       <button
                         onClick={(e) => handleDeleteClick(project.id, project.title, e)}
-                        className="p-2 bg-white/20 hover:bg-red-500/80 backdrop-blur-sm rounded-full transition-all duration-300 transform hover:scale-110 group/delete"
-                        title="Delete project"
+                        className="group/delete relative px-3 py-1.5 bg-red-500/90 hover:bg-red-600 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center space-x-1.5"
+                        title="Delete this project"
                       >
                         <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
+                        <span className="text-white font-semibold text-xs">Delete</span>
                       </button>
                     </div>
                   </div>

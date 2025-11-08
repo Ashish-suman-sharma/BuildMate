@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
+const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+
+if (!apiKey) {
+  console.warn('⚠️ GEMINI_API_KEY is not configured. AI features will be limited.');
+}
+
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,6 +15,17 @@ export async function POST(request: NextRequest) {
 
     if (!text || !uid) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    if (!genAI) {
+      console.error('❌ Gemini API not configured');
+      return NextResponse.json(
+        { 
+          error: 'AI service not configured',
+          details: 'Please add GEMINI_API_KEY to your environment variables'
+        },
+        { status: 503 }
+      );
     }
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });

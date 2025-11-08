@@ -5,6 +5,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { collection, query, where, getDocs, doc, getDoc, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useToast } from '@/hooks/useToast';
+import { ToastContainer } from '@/components/Toast';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Project {
   id: string;
@@ -17,6 +20,8 @@ interface Project {
 export default function HomePage() {
   const { user, userProfile, signOut, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { toasts, removeToast, success, error } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [suggestedProjects, setSuggestedProjects] = useState<Project[]>([]);
@@ -119,9 +124,9 @@ export default function HomePage() {
 
       const data = await response.json();
       setGeneratedProjects(data.projects || []);
-    } catch (error) {
-      console.error('Error generating projects:', error);
-      alert('Failed to generate projects. Please try again.');
+    } catch (err) {
+      console.error('Error generating projects:', err);
+      error('Failed to generate projects. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -151,10 +156,11 @@ export default function HomePage() {
       // Save project to Firestore on client side
       const projectRef = await addDoc(collection(db, 'projects'), data.projectData);
       
-      router.push(`/project/${projectRef.id}`);
-    } catch (error) {
-      console.error('Error creating project:', error);
-      alert('Failed to create project. Please try again.');
+      success('🎉 Project created successfully!');
+      setTimeout(() => router.push(`/project/${projectRef.id}`), 500);
+    } catch (err) {
+      console.error('Error creating project:', err);
+      error('Failed to create project. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -162,20 +168,24 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       {/* Enhanced Header */}
       <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             {/* Logo and Navigation */}
             <div className="flex items-center space-x-8">
-              <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => router.push('/home')}
+                className="flex items-center space-x-3 hover:opacity-80 transition-opacity cursor-pointer"
+              >
                 <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
                   <span className="text-white font-bold text-xl">B</span>
                 </div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                   BuildMate
                 </h1>
-              </div>
+              </button>
               
               <nav className="hidden md:flex space-x-1">
                 <button 
@@ -193,12 +203,31 @@ export default function HomePage() {
               </nav>
             </div>
 
-            {/* User Profile */}
-            <div className="relative user-menu-container" ref={menuRef}>
+            {/* Theme Toggle & User Profile */}
+            <div className="flex items-center space-x-4">
+              {/* Theme Toggle Button */}
               <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
+                onClick={toggleTheme}
+                className="p-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
+                title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
               >
+                {theme === 'light' ? (
+                  <svg className="w-5 h-5 text-gray-700 group-hover:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5 text-gray-300 group-hover:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* User Profile */}
+              <div className="relative user-menu-container" ref={menuRef}>
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
+                >
                 <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400">
                   {displayName}
                 </span>
@@ -259,6 +288,7 @@ export default function HomePage() {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>

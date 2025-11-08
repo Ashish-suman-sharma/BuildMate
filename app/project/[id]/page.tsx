@@ -254,14 +254,17 @@ export default function ProjectPage() {
           <div className="flex justify-between items-center">
             {/* Logo and Navigation */}
             <div className="flex items-center space-x-8">
-              <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => router.push('/home')}
+                className="flex items-center space-x-3 hover:opacity-80 transition-opacity cursor-pointer"
+              >
                 <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
                   <span className="text-white font-bold text-xl">B</span>
                 </div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                   BuildMate
                 </h1>
-              </div>
+              </button>
               
               <nav className="hidden md:flex space-x-1">
                 <button 

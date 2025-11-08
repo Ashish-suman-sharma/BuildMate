@@ -28,19 +28,37 @@ export default function OnboardingPage() {
     try {
       console.log('📝 Submitting onboarding for user:', user.uid);
       
-      // Call API to parse skills using Gemini AI
-      const response = await fetch('/api/parse-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: skillText, uid: user.uid }),
-      });
+      let parsedData = {
+        skills: [],
+        preferredTech: [],
+        experience: 'beginner',
+        timeBudget: 'flexible'
+      };
 
-      if (!response.ok) {
-        throw new Error('Failed to parse profile');
+      // Try to parse skills using Gemini AI
+      try {
+        const response = await fetch('/api/parse-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: skillText, uid: user.uid }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✅ Profile parsed:', data);
+          parsedData = {
+            skills: data.skills || [],
+            preferredTech: data.preferredTech || [],
+            experience: data.experience || 'beginner',
+            timeBudget: data.timeBudget || 'flexible'
+          };
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.warn('⚠️ AI parsing failed, continuing with defaults:', errorData);
+        }
+      } catch (parseError) {
+        console.warn('⚠️ AI parsing failed, continuing with defaults:', parseError);
       }
-
-      const data = await response.json();
-      console.log('✅ Profile parsed:', data);
 
       const finalName = name.trim() || user.displayName || user.email?.split('@')[0] || 'User';
 
@@ -54,17 +72,21 @@ export default function OnboardingPage() {
       await updateDoc(userRef, {
         name: finalName,
         bio: bio.trim(),
-        skills: data.skills || [],
-        preferredTech: data.preferredTech || [],
-        experience: data.experience || 'beginner',
-        timeBudget: data.timeBudget || 'flexible',
+        profileText: skillText.trim(), // Save the raw text for manual editing later
+        skills: parsedData.skills,
+        preferredTech: parsedData.preferredTech,
+        experience: parsedData.experience,
+        timeBudget: parsedData.timeBudget,
         completedOnboarding: true,
       });
 
       console.log('✅ Profile updated, navigating to home...');
       
-      // Use replace instead of push to prevent back navigation
-      router.replace('/home');
+      // Add a small delay to ensure Firestore update propagates
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Force a page reload to refresh auth context
+      window.location.href = '/home';
     } catch (error: any) {
       console.error('❌ Error saving profile:', error);
       setError(error.message || 'Failed to save profile. Please try again.');
@@ -102,8 +124,11 @@ export default function OnboardingPage() {
       
       console.log('✅ Onboarding skipped, navigating to home...');
       
-      // Use replace instead of push to prevent back navigation
-      router.replace('/home');
+      // Add a small delay to ensure Firestore update propagates
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Force a page reload to refresh auth context
+      window.location.href = '/home';
     } catch (error: any) {
       console.error('❌ Error skipping onboarding:', error);
       setError(error.message || 'Failed to skip. Please try again.');
@@ -177,11 +202,17 @@ export default function OnboardingPage() {
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               💡 Include: your experience level, technologies you know, time available, and what you want to learn
             </p>
+            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                🤖 <strong>AI-Powered:</strong> We'll automatically extract your skills and preferences. You can always update them later in your profile!
+              </p>
+            </div>
           </div>
 
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm">
-              {error}
+              <strong>⚠️ Note:</strong> {error}
+              <p className="mt-1 text-xs">Don't worry! Your profile will still be saved. You can add skills manually in your profile page.</p>
             </div>
           )}
 
