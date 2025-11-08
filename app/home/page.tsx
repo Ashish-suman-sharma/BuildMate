@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/useToast';
 import { ToastContainer } from '@/components/Toast';
 import { useTheme } from '@/contexts/ThemeContext';
+import OnboardingPopup from '@/components/OnboardingPopup';
 
 interface Project {
   id: string;
@@ -41,11 +42,6 @@ export default function HomePage() {
     
     if (!user) {
       router.push('/auth');
-      return;
-    }
-
-    if (userProfile && !userProfile.completedOnboarding) {
-      router.push('/onboarding');
       return;
     }
 
@@ -262,6 +258,9 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       
+      {/* Onboarding Popup - Session dismissible */}
+      <OnboardingPopup userProfile={userProfile} />
+      
       {/* Animated Loading Screen Overlay for Roadmap Creation */}
       {creatingRoadmap && (
         <div className="fixed inset-0 bg-gradient-to-br from-primary-600/95 via-primary-700/95 to-primary-800/95 dark:from-gray-900/98 dark:via-gray-800/98 dark:to-gray-900/98 backdrop-blur-sm z-[9999] flex items-center justify-center animate-in fade-in duration-300">
@@ -317,68 +316,64 @@ export default function HomePage() {
 
             {/* Helpful Tip */}
             <div className="mt-8 p-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl max-w-md mx-auto">
-              <p className="text-white/90 text-sm">
-                💡 <span className="font-semibold">Tip:</span> Each project includes milestones, tasks, and curated resources to help you learn effectively!
+              <p className="text-white/90 text-sm flex items-center gap-2">
+                <svg className="w-4 h-4 flex-shrink-0 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span className="font-semibold">Tip:</span> Each project includes milestones, tasks, and curated resources to help you learn effectively!
               </p>
             </div>
           </div>
         </div>
       )}
       
-      {/* Enhanced Header */}
-      <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      {/* Minimal Header */}
+      <header className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50 sticky top-0 z-50 transition-colors duration-300">
+        <div className="max-w-6xl mx-auto px-6 py-5">
           <div className="flex justify-between items-center">
-            {/* Logo and Navigation */}
-            <div className="flex items-center space-x-8">
+            {/* Logo */}
+            <button 
+              onClick={() => router.push('/home')}
+              className="flex items-center space-x-2 group"
+            >
+              <div className="w-9 h-9 bg-gray-900 dark:bg-white rounded-lg flex items-center justify-center transform group-hover:scale-110 transition-transform duration-200">
+                <span className="text-white dark:text-gray-900 font-bold text-lg">B</span>
+              </div>
+              <span className="text-xl font-semibold text-gray-900 dark:text-white">BuildMate</span>
+            </button>
+            
+            {/* Navigation */}
+            <nav className="hidden md:flex items-center space-x-1">
               <button 
-                onClick={() => router.push('/home')}
-                className="flex items-center space-x-3 hover:opacity-80 transition-opacity cursor-pointer"
+                onClick={() => router.push('/home')} 
+                className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg transition-colors duration-200"
               >
-                <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-xl">B</span>
-                </div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
-                  BuildMate
-                </h1>
+                Home
               </button>
-              
-              <nav className="hidden md:flex space-x-1">
-                <button 
-                  onClick={() => router.push('/home')} 
-                  className="px-4 py-2 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-semibold rounded-lg"
-                >
-                  Home
-                </button>
-                <button 
-                  onClick={() => router.push('/dashboard')} 
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
-                >
-                  Dashboard
-                </button>
-              </nav>
-            </div>
-
-            {/* User Profile */}
-            <div className="flex items-center space-x-4">
-              <div className="relative user-menu-container" ref={menuRef}>
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-all group"
-                >
-                <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400">
-                  {displayName}
-                </span>
+              <button 
+                onClick={() => router.push('/dashboard')} 
+                className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors duration-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Dashboard
+              </button>
+              <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-2"></div>
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center space-x-2 px-3 py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 group"
+              >
                 <img
                   src={userAvatar}
                   alt={displayName}
-                  className="w-10 h-10 rounded-full ring-2 ring-primary-500 ring-offset-2 dark:ring-offset-gray-800"
+                  className="w-9 h-9 rounded-full ring-2 ring-gray-200 dark:ring-gray-700 transform group-hover:scale-110 transition-transform duration-200"
                 />
+                <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {displayName}
+                </span>
               </button>
 
               {/* Dropdown Menu */}
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200" ref={menuRef}>
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">{displayName}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
@@ -389,7 +384,7 @@ export default function HomePage() {
                       setShowUserMenu(false);
                       router.push('/profile');
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3 transition-colors duration-150"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -402,7 +397,7 @@ export default function HomePage() {
                       setShowUserMenu(false);
                       router.push('/dashboard');
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-3 transition-colors duration-150"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -416,7 +411,7 @@ export default function HomePage() {
                         setShowUserMenu(false);
                         signOut();
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center space-x-3"
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center space-x-3 transition-colors duration-150"
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -426,8 +421,7 @@ export default function HomePage() {
                   </div>
                 </div>
               )}
-              </div>
-            </div>
+            </nav>
           </div>
         </div>
       </header>
@@ -489,28 +483,32 @@ export default function HomePage() {
           <div className="mt-8">
             <div className="flex items-center justify-center gap-3 mb-3">
               <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent"></div>
-              <span className="text-sm font-semibold text-gray-600 dark:text-gray-400 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full">
-                💡 Quick Start
+              <span className="text-sm font-semibold text-gray-600 dark:text-gray-400 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Quick Start
               </span>
               <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent"></div>
             </div>
             <div className="flex flex-wrap justify-center gap-3">
               {[
-                { text: 'React hooks', icon: '⚛️', color: 'from-blue-500 to-cyan-500' },
-                { text: 'Node.js API', icon: '🟢', color: 'from-green-500 to-emerald-500' },
-                { text: 'Todo app', icon: '✅', color: 'from-purple-500 to-pink-500' },
-                { text: 'Weather dashboard', icon: '🌤️', color: 'from-orange-500 to-amber-500' }
+                { text: 'React hooks', icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="2"/><path d="M12,2c-1.5,0-2.7,0.3-3.6,0.9C7.5,3.5,7,4.3,7,5.2v1.6C5.3,7.3,4,8,3.1,9c-1,1.1-1.5,2.5-1.5,4.2c0,1.7,0.5,3.1,1.5,4.2c0.9,1,2.2,1.7,3.9,2.2v1.6c0,0.9,0.5,1.7,1.4,2.3c0.9,0.6,2.1,0.9,3.6,0.9c1.5,0,2.7-0.3,3.6-0.9c0.9-0.6,1.4-1.4,1.4-2.3v-1.6c1.7-0.5,3-1.2,3.9-2.2c1-1.1,1.5-2.5,1.5-4.2c0-1.7-0.5-3.1-1.5-4.2c-0.9-1-2.2-1.7-3.9-2.2V5.2c0-0.9-0.5-1.7-1.4-2.3C14.7,2.3,13.5,2,12,2z"/></svg>, iconColor: 'text-blue-500', bgColor: 'bg-blue-500/10' },
+                { text: 'Node.js API', icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.85c-.27 0-.55.07-.78.2l-7.44 4.3c-.48.28-.78.8-.78 1.36v8.58c0 .56.3 1.08.78 1.36l1.95 1.12c.95.46 1.27.47 1.71.47 1.4 0 2.21-.85 2.21-2.33V8.44c0-.12-.1-.22-.22-.22H8.5c-.13 0-.23.1-.23.22v8.47c0 .66-.68 1.31-1.77.76L4.45 16.5a.26.26 0 0 1-.11-.21V7.71c0-.09.04-.17.11-.21l7.44-4.29c.06-.04.16-.04.22 0l7.44 4.29c.07.04.11.12.11.21v8.58c0 .08-.04.16-.11.21l-7.44 4.29c-.06.04-.16.04-.22 0L10.6 20c-.06-.03-.14-.03-.19 0-.5.28-.59.32-1.08.5-.13.05-.31.12.07.35l2.51 1.49c.24.14.5.21.77.21.27 0 .54-.07.77-.21l7.44-4.3c.48-.28.78-.8.78-1.36V7.71c0-.56-.3-1.08-.78-1.36l-7.44-4.3c-.23-.13-.5-.2-.77-.2z"/></svg>, iconColor: 'text-green-600', bgColor: 'bg-green-500/10' },
+                { text: 'Todo app', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>, iconColor: 'text-purple-600', bgColor: 'bg-purple-500/10' },
+                { text: 'Weather dashboard', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /></svg>, iconColor: 'text-orange-600', bgColor: 'bg-orange-500/10' }
               ].map((suggestion) => (
                 <button
                   key={suggestion.text}
                   onClick={() => setInput(suggestion.text)}
-                  className="group relative px-5 py-2.5 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750 border-2 border-gray-200 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-500 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg"
+                  className="group relative px-4 py-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg transition-all duration-200 hover:shadow-md"
                 >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-lg group-hover:scale-110 transition-transform duration-300">{suggestion.icon}</span>
+                  <div className="flex items-center gap-2">
+                    <div className={`${suggestion.bgColor} ${suggestion.iconColor} p-1 rounded-md group-hover:scale-110 transition-transform duration-200`}>
+                      {suggestion.icon}
+                    </div>
                     <span>{suggestion.text}</span>
                   </div>
-                  <div className={`absolute inset-0 rounded-xl bg-gradient-to-r ${suggestion.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}></div>
                 </button>
               ))}
             </div>

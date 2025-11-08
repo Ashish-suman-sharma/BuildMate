@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     await createUserWithEmailAndPassword(auth, email, password);
-    router.push('/onboarding');
+    router.push('/home');
   };
 
   const signInWithGoogle = async () => {
