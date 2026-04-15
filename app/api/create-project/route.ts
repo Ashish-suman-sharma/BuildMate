@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ API key configured, creating model...');
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
     const prompt = `
 You are a project planning AI. Generate a detailed roadmap for this project:
